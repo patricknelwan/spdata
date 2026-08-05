@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Save the Spire targets stream as one JSON object per line, per day."""
+"""Save the Spire targets stream as compressed JSONL, one file per day."""
 
+import gzip
 import json
 import os
 import sys
@@ -53,8 +54,10 @@ def save_stream():
                         if today != output_date:
                             if output_file:
                                 output_file.close()
-                            output_file = (OUTPUT_DIR / f"targets-{today.isoformat()}.jsonl").open(
-                                "a", encoding="utf-8"
+                            output_file = gzip.open(
+                                OUTPUT_DIR / f"targets-{today.isoformat()}.jsonl.gz",
+                                "at",
+                                encoding="utf-8",
                             )
                             output_date = today
                         output_file.write(json.dumps(record, separators=(",", ":")) + "\n")
