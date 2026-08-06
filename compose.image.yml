@@ -3,6 +3,9 @@ services:
     build: .
     image: spire-targets-stream:latest
     env_file: .env
+    environment:
+      TZ: Asia/Jakarta
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
     restart: unless-stopped
