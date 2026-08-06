@@ -10,6 +10,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
@@ -17,6 +18,8 @@ URL = os.getenv("SPIRE_STREAM_URL")
 TOKEN = os.getenv("SPIRE_BEARER_TOKEN")
 OUTPUT_DIR = Path(os.getenv("SPIRE_OUTPUT_DIR", "data"))
 LOG_FILE = Path("logs/log.jsonl")
+POSITION_TOKEN_FILE = Path("state/position_token")
+STREAM_IDLE_TIMEOUT = int(os.getenv("SPIRE_STREAM_IDLE_TIMEOUT", "300"))
 LOG_LOCK = threading.Lock()
 
 
@@ -33,6 +36,30 @@ def heartbeat(stop_event, state):
         with LOG_LOCK:
             snapshot = state.copy()
         log_event("heartbeat", **snapshot)
+
+
+def stream_url(position_token):
+    if not position_token:
+        return URL
+    parts = urlsplit(URL)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+             if key != "position_token"]
+    query.append(("position_token", position_token))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def load_position_token():
+    try:
+        return POSITION_TOKEN_FILE.read_text(encoding="utf-8").strip() or None
+    except FileNotFoundError:
+        return None
+
+
+def save_position_token(position_token):
+    POSITION_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary_file = POSITION_TOKEN_FILE.with_suffix(".tmp")
+    temporary_file.write_text(position_token, encoding="utf-8")
+    temporary_file.replace(POSITION_TOKEN_FILE)
 
 
 def record_from_line(line: bytes):
@@ -52,6 +79,7 @@ def save_stream():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     headers = {"Authorization": f"Bearer {TOKEN.removeprefix('Bearer ').strip()}"}
+    position_token = load_position_token()
     state = {"connected": False, "records": 0, "last_record": None}
     stop_heartbeat = threading.Event()
     heartbeat_thread = threading.Thread(target=heartbeat, args=(stop_heartbeat, state), daemon=True)
@@ -61,8 +89,8 @@ def save_stream():
     try:
         while True:
             try:
-                log_event("connecting")
-                with urlopen(Request(URL, headers=headers), timeout=None) as response:
+                log_event("connecting", resuming=bool(position_token))
+                with urlopen(Request(stream_url(position_token), headers=headers), timeout=STREAM_IDLE_TIMEOUT) as response:
                     state["connected"] = True
                     log_event("stream_connected")
                     output_date = None
@@ -77,6 +105,11 @@ def save_stream():
                                 continue
                             if record is None:
                                 continue
+
+                            if isinstance(record, dict) and record.get("position_token"):
+                                position_token = record["position_token"]
+                                save_position_token(position_token)
+                                log_event("position_token_saved")
 
                             today = date.today()
                             if today != output_date:
@@ -95,7 +128,20 @@ def save_stream():
                             output_file.close()
             except KeyboardInterrupt:
                 return
-            except (HTTPError, URLError, TimeoutError, OSError) as error:
+            except TimeoutError as error:
+                state["connected"] = False
+                log_event("stream_idle_timeout", error=str(error), retry_seconds=5)
+                time.sleep(5)
+            except HTTPError as error:
+                state["connected"] = False
+                if error.code == 422 and position_token:
+                    POSITION_TOKEN_FILE.unlink(missing_ok=True)
+                    position_token = None
+                    log_event("position_token_rejected", error=str(error), retry_seconds=5)
+                else:
+                    log_event("stream_disconnected", error=str(error), retry_seconds=5)
+                time.sleep(5)
+            except (URLError, OSError) as error:
                 state["connected"] = False
                 log_event("stream_disconnected", error=str(error), retry_seconds=5)
                 print(f"Stream disconnected: {error}; retrying in 5 seconds", file=sys.stderr)
