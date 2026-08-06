@@ -2,3 +2,6 @@
 compose.yml
 data/
 logs/
+state/
+data/
+logs/

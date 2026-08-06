@@ -8,4 +8,5 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./state:/app/state
     restart: unless-stopped
