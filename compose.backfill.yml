@@ -1,0 +1,14 @@
+services:
+  targets-backfill:
+    build:
+      context: .
+      dockerfile: Dockerfile.backfill
+    image: spire-targets-backfill:latest
+    env_file: .env
+    environment:
+      TZ: Asia/Jakarta
+      SPIRE_BACKFILL_START: "2026-07-26"
+      SPIRE_BACKFILL_END: "2026-08-01"
+    volumes:
+      - ./data-backfill:/app/data-backfill
+    restart: "no"

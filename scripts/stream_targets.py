@@ -2,8 +2,10 @@
 """Save the Spire targets stream as compressed JSONL, one file per day."""
 
 import gzip
+import fcntl
 import json
 import os
+import signal
 import sys
 import threading
 import time
@@ -19,6 +21,7 @@ TOKEN = os.getenv("SPIRE_BEARER_TOKEN")
 OUTPUT_DIR = Path(os.getenv("SPIRE_OUTPUT_DIR", "data"))
 LOG_FILE = Path("logs/log.jsonl")
 POSITION_TOKEN_FILE = Path("state/position_token")
+LOCK_FILE = Path("state/collector.lock")
 STREAM_IDLE_TIMEOUT = int(os.getenv("SPIRE_STREAM_IDLE_TIMEOUT", "300"))
 LOG_LOCK = threading.Lock()
 
@@ -62,6 +65,21 @@ def save_position_token(position_token):
     temporary_file.replace(POSITION_TOKEN_FILE)
 
 
+def acquire_lock():
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = LOCK_FILE.open("w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock_file.close()
+        raise SystemExit("Another collector instance is already running") from error
+    return lock_file
+
+
+def stop_on_signal(signum, frame):
+    raise KeyboardInterrupt
+
+
 def record_from_line(line: bytes):
     line = line.decode("utf-8").strip()
     if not line or line.startswith(":"):
@@ -77,6 +95,9 @@ def save_stream():
     if not URL or not TOKEN:
         raise SystemExit("Set SPIRE_STREAM_URL and SPIRE_BEARER_TOKEN first")
 
+    lock_file = acquire_lock()
+    signal.signal(signal.SIGINT, stop_on_signal)
+    signal.signal(signal.SIGTERM, stop_on_signal)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     headers = {"Authorization": f"Bearer {TOKEN.removeprefix('Bearer ').strip()}"}
     position_token = load_position_token()
@@ -149,6 +170,7 @@ def save_stream():
     finally:
         stop_heartbeat.set()
         log_event("collector_stopped")
+        lock_file.close()
 
 
 def self_test():
