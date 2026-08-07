@@ -1,0 +1,13 @@
+services:
+  targets-parquet:
+    build:
+      context: .
+      dockerfile: Dockerfile.duckdb
+    image: spire-targets-parquet:latest
+    volumes:
+      - ./data:/app/input:ro
+      - ./parquet:/app/output
+      - ./duckdb-tmp:/app/tmp
+    mem_limit: 4g
+    cpus: 2
+    restart: "no"
