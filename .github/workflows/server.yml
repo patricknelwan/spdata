@@ -11,6 +11,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
+  IMAGE_TAG: github-latest
 
 jobs:
   build-publish:
@@ -30,12 +31,12 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:github-${{ github.sha }}
 
   deploy:
     needs: build-publish
-    runs-on: self-hosted
+    runs-on: spdata
     env:
       SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
     steps:
@@ -47,16 +48,16 @@ jobs:
           set -eu
           test -f "$SERVER_APP_DIR/.env"
           mkdir -p "$SERVER_APP_DIR/data" "$SERVER_APP_DIR/logs" "$SERVER_APP_DIR/state"
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-          docker pull "$IMAGE_NAME:latest"
-          docker rm -f spire-targets-stream 2>/dev/null || true
-          docker run -d \
-            --name spire-targets-stream \
+          trap 'podman logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          printf '%s' "$GHCR_TOKEN" | podman login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          podman pull "$IMAGE_NAME:$IMAGE_TAG"
+          podman rm -f spire-targets-stream-github 2>/dev/null || true
+          podman run -d \
+            --name spire-targets-stream-github \
             --restart unless-stopped \
             --env-file "$SERVER_APP_DIR/.env" \
             -e TZ=Asia/Jakarta \
-            -v "$SERVER_APP_DIR/data:/app/data" \
-            -v "$SERVER_APP_DIR/logs:/app/logs" \
-            -v "$SERVER_APP_DIR/state:/app/state" \
-            "$IMAGE_NAME:latest"
+            -v "$SERVER_APP_DIR/data:/app/data:Z" \
+            -v "$SERVER_APP_DIR/logs:/app/logs:Z" \
+            -v "$SERVER_APP_DIR/state:/app/state:Z" \
+            "$IMAGE_NAME:$IMAGE_TAG"
