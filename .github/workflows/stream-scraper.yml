@@ -3,6 +3,8 @@ name: Build and deploy stream collector
 on:
   push:
     branches: [main]
+    paths:
+      - scripts/stream_targets.py
   workflow_dispatch:
 
 permissions:
