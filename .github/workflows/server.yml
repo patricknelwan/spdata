@@ -55,6 +55,7 @@ jobs:
           podman run -d \
             --name spire-targets-stream-github \
             --restart unless-stopped \
+            --network host \
             --env-file "$SERVER_APP_DIR/.env" \
             -e TZ=Asia/Jakarta \
             -v "$SERVER_APP_DIR/data:/app/data:Z" \
