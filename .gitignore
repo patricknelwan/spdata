@@ -6,3 +6,5 @@ state/
 data/
 logs/
 data-backfill/
+parquet/
+duckdb-tmp/

@@ -30,12 +30,19 @@ After changing files in `scripts/`, rebuild and recreate the container:
 docker compose -f compose.image.yml up -d --build --force-recreate
 ```
 
-## Historical backfill
+## Parquet conversion
 
-The backfill setup requests the configured date range in 15-minute chunks and writes one gzip-compressed JSONL file per Jakarta day:
+Stop the collector or convert only completed daily archives. Verify each archive first:
 
 ```bash
-docker compose -f compose.backfill.yml up --build
+gzip -t data/targets-YYYY-MM-DD.jsonl.gz
 ```
 
-Output is written to `data-backfill/`. The current range is configured in `compose.backfill.yml` as `2026-07-26` through `2026-08-01`.
+Convert the valid archives with DuckDB:
+
+```bash
+mkdir -p parquet
+docker compose -f compose.duckdb.yml run --rm --build targets-parquet
+```
+
+The converter flattens `target` records, skips stream status records, and writes Zstandard-compressed Parquet files partitioned by archive date under `parquet/`.
